@@ -7,6 +7,7 @@ use bevy::prelude::*;
 use bevy::sprite::{Material2d, MaterialMesh2dBundle};
 use bevy::time::common_conditions::on_timer;
 use bevy::window::PresentMode;
+use bevy::window::PrimaryWindow;
 use bevy::window::WindowTheme;
 
 use rand::random;
@@ -87,7 +88,9 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    window: Query<(&Window, With<PrimaryWindow>)>,
 ) {
+    let window = window.get_single().unwrap().0;
     println!("Setting up");
     //commands.spawn(Object::new(&meshes, &materials));
 
@@ -109,29 +112,25 @@ fn setup(
         ..default()
     });
 
-    commands.spawn(Object {
-        mesh: MaterialMesh2dBundle {
-            mesh: meshes.add(shape::Circle::new(10.).into()).into(),
-            material: materials.add(ColorMaterial::from(Color::PURPLE)),
-            transform: Transform::from_translation(Vec3::new(0., 0., 0.)),
-            ..default()
-        },
-        mass: Mass(50.),
-        velocity: Velocity(Vec2::new(10., 0.)),
-    });
-
     let speed = 10.0;
+    let half_window_width = window.width() / 2.0;
+    let half_window_height = window.height() / 2.0;
     //spawn objects with random positions and velocities
-    for i in 0..2 {
+    for i in 0..1 {
+        let x_pos = random::<f32>() * half_window_width - half_window_width / 2.0;
+        let y_pos = random::<f32>() * half_window_height - half_window_height / 2.0;
+        let x_vel = random::<f32>() * 2.0 - 1.0;
+        let y_vel = random::<f32>() * 2.0 - 1.0;
+
         commands.spawn(Object {
             mesh: MaterialMesh2dBundle {
                 mesh: meshes.add(shape::Circle::new(10.).into()).into(),
                 material: materials.add(ColorMaterial::from(Color::PURPLE)),
-                transform: Transform::from_translation(Vec3::new(0., 0., 0.)),
+                transform: Transform::from_translation(Vec3::new(x_pos, y_pos, 0.)),
                 ..default()
             },
             mass: Mass(50.),
-            velocity: Velocity(Vec2::new(random::<f32>() * speed, random::<f32>() * speed)),
+            velocity: Velocity(Vec2::new(x_vel, y_vel).normalize() * speed),
         });
     }
 }
