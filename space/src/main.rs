@@ -9,6 +9,8 @@ use bevy::time::common_conditions::on_timer;
 use bevy::window::PresentMode;
 use bevy::window::WindowTheme;
 
+use rand::random;
+
 pub const BACKGROUND_COLOR: Color = Color::BLACK;
 
 pub const FPS_CHECK_INTERVAL: u32 = 2;
@@ -43,11 +45,12 @@ fn main() {
             Update,
             print_frames.run_if(on_timer(Duration::from_secs(FPS_CHECK_INTERVAL.into()))),
         )
+        .add_systems(Update, update_transform)
         //.add_systems(FixedUpdate, zoom_2d)
         .run();
 }
 
-#[derive(Component)]
+#[derive(Bundle)]
 struct Object<T: Material2d> {
     mesh: MaterialMesh2dBundle<T>,
     mass: Mass,
@@ -72,6 +75,13 @@ struct Velocity(Vec2);
 //         }
 //     }
 // }
+
+fn update_transform(time: Res<Time>, mut query: Query<(&mut Transform, &Velocity)>) {
+    for (mut transform, velocity) in &mut query {
+        transform.translation.x += velocity.0.x * time.delta_seconds();
+        transform.translation.y += velocity.0.y * time.delta_seconds();
+    }
+}
 
 fn setup(
     mut commands: Commands,
@@ -107,8 +117,23 @@ fn setup(
             ..default()
         },
         mass: Mass(50.),
-        velocity: Velocity(Vec2::new(0., 0.)),
+        velocity: Velocity(Vec2::new(10., 0.)),
     });
+
+    let speed = 10.0;
+    //spawn objects with random positions and velocities
+    for i in 0..2 {
+        commands.spawn(Object {
+            mesh: MaterialMesh2dBundle {
+                mesh: meshes.add(shape::Circle::new(10.).into()).into(),
+                material: materials.add(ColorMaterial::from(Color::PURPLE)),
+                transform: Transform::from_translation(Vec3::new(0., 0., 0.)),
+                ..default()
+            },
+            mass: Mass(50.),
+            velocity: Velocity(Vec2::new(random::<f32>() * speed, random::<f32>() * speed)),
+        });
+    }
 }
 
 fn zoom_2d(mut query: Query<&mut OrthographicProjection, With<Camera2d>>) {
