@@ -4,7 +4,6 @@ mod config;
 use crate::bodies::*;
 use crate::config::*;
 
-use bevy::text::Text2dBounds;
 use bevy::window::WindowTheme;
 use bevy_pancam::{PanCam, PanCamPlugin};
 
@@ -16,14 +15,14 @@ use bevy::time::common_conditions::on_timer;
 
 use bevy::window::PrimaryWindow;
 
-use rand::random;
+use rand::*;
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "I am a window!".into(),
-                resolution: (800., 600.).into(),
+                //resolution: (800., 600.).into(),
                 present_mode: bevy::window::PresentMode::Fifo,
                 position: WindowPosition::Centered(MonitorSelection::Primary),
                 //present_mode: PresentMode::Immediate,
@@ -32,7 +31,7 @@ fn main() {
                 // Tells wasm not to override default event handling, like F5, Ctrl+R etc.
                 prevent_default_event_handling: false,
                 window_theme: Some(WindowTheme::Dark),
-                resizable: false,
+                resizable: true,
                 // This will spawn an invisible window
                 // The window will be made visible in the make_visible() system after 3 frames.
                 // This is useful when you want to avoid the white window that shows up before the GPU is ready to render the app.
@@ -53,8 +52,8 @@ fn main() {
             Update,
             print_frames.run_if(on_timer(Duration::from_secs(FPS_CHECK_INTERVAL.into()))),
         )
-        .add_systems(FixedUpdate, test)
-        //.add_systems(FixedUpdate, zoom_2d)
+        .add_systems(Last, (update_follow_text, update_camera_follow))
+        .add_systems(Update, update_space)
         .run();
 }
 
@@ -91,8 +90,8 @@ fn setup(
     // });
     commands.insert_resource(FPS::default());
 
-    let speed = 25000.0;
-    let window_width = window.width();
+    //let speed = 25000.0;
+    //let window_width = window.width();
     let window_height = window.height();
 
     // commands.spawn((
@@ -114,14 +113,16 @@ fn setup(
         20000000000.,
         1.,
         Vec2::new(0., 0.),
-        Vec2::new(5000., 0.),
+        Vec2::new(10000., 0.),
         meshes.as_mut(),
         materials.as_mut(),
     );
     let orbitee_radius = body_bundle.radius.0;
     let orbitee_position = body_bundle.material_bundle.transform.translation;
+    let orbitee_position = Vec2::new(orbitee_position.x, orbitee_position.y);
     let orbitee_mass = body_bundle.object_bundle.mass.0;
     let orbitee_velocity = body_bundle.object_bundle.velocity.0;
+
     println!("orbitee radius: {}", orbitee_radius);
 
     let camera_bundle = Camera2dBundle {
@@ -135,43 +136,44 @@ fn setup(
         ..default()
     };
 
-    commands.spawn(camera_bundle).insert(PanCam::default());
+    commands.spawn(camera_bundle).insert(PanCam {
+        grab_buttons: [].to_vec(),
+        ..default()
+    });
 
     let font = asset_server.load("fonts/FiraSans-Bold.ttf");
     let text_style = TextStyle {
         font: font.clone(),
-        font_size: 20.0,
+        font_size: 11.0,
         color: Color::WHITE,
     };
     let text_alignment = TextAlignment::Center;
     let name = Name::new("Sun");
     let name_str = name.clone().to_string();
+    let style = Style {
+        //position_type: PositionType::Absolute,
+        width: Val::Px(32.0),
+        height: Val::Px(32.0),
+        align_content: AlignContent::Center,
+        align_items: AlignItems::Center,
+        align_self: AlignSelf::Center,
+        justify_content: JustifyContent::Center,
+        ..default()
+    };
 
     let node_bundle = NodeBundle {
-        style: Style {
-            position_type: PositionType::Absolute,
-            width: Val::Px(32.0),
-            height: Val::Px(32.0),
-            align_content: AlignContent::Center,
-            align_items: AlignItems::Center,
-            align_self: AlignSelf::Center,
-            justify_content: JustifyContent::Center,
-            ..default()
-        },
-
+        style: style.clone(),
         ..default()
     };
 
     let text_bundle = TextBundle {
         text: Text::from_section(name_str, text_style.clone()).with_alignment(text_alignment),
-        style: Style {
-            //align_self: AlignSelf::Center,
-            ..default()
-        },
         ..default()
     };
 
     let parent = commands.spawn((body_bundle, name, FollowText)).id();
+
+    commands.insert_resource(CameraFollowEntity(parent.clone()));
 
     let follow_entity = FollowEntity(parent);
     commands
@@ -180,60 +182,133 @@ fn setup(
             parent.spawn(text_bundle);
         });
 
-    //spawn objects with random positions and velocities
-    for i in 0..100 {
-        let radius: f32 = random::<f32>() * 1000000. + orbitee_radius;
-        let density: f32 = 1.;
-        let mass: f32 = random::<f32>() * 1000. + 1000.; //20000. + 1000000.;
+    let mut yeet = |density: f32,
+                    mass: f32,
+                    speed: f32,
+                    name: String,
+                    orbitee_mass: &f32,
+                    orbitee_position: &Vec2,
+                    orbitee_velocity: &Vec2| {
+        //let radius: f32 = random::<f32>() * 1000000. + orbitee_radius;
 
-        let name = Name::new("Object".to_string() + &i.to_string());
+        let name = Name::new(name);
         let name_str = name.clone().to_string();
 
         println!("Spawning object");
+        let body_bundle = new_orbiting_body(
+            &orbitee_mass,
+            &orbitee_position,
+            &orbitee_velocity,
+            mass,
+            density,
+            speed,
+            meshes.as_mut(),
+            materials.as_mut(),
+        );
+
+        //let orbitee_radius = body_bundle.radius.0;
+        let orbitee_position = body_bundle.material_bundle.transform.translation;
+        let orbitee_position = Vec2::new(orbitee_position.x, orbitee_position.y);
+        let orbitee_mass = body_bundle.object_bundle.mass.0;
+        let orbitee_velocity = body_bundle.object_bundle.velocity.0;
+
+        let node_bundle = NodeBundle {
+            style: style.clone(),
+            ..default()
+        };
+
+        let text_bundle = TextBundle {
+            text: Text::from_section(name_str, text_style.clone()).with_alignment(text_alignment),
+            ..default()
+        };
+
+        let parent = commands.spawn((body_bundle, name, FollowText)).id();
+
+        let follow_entity = FollowEntity(parent);
         commands
-            .spawn(new_orbiting_body(
-                orbitee_radius,
-                orbitee_mass,
-                orbitee_velocity,
-                Vec2::new(orbitee_position.x, orbitee_position.y),
-                mass,
-                density,
-                radius,
-                meshes.as_mut(),
-                materials.as_mut(),
-            ))
+            .spawn((follow_entity, node_bundle))
             .with_children(|parent| {
-                parent.spawn(Text2dBundle {
-                    text: Text::from_section(name_str, text_style.clone())
-                        .with_alignment(text_alignment),
-                    transform: Transform::from_xyz(0., 100., 0.),
-                    ..default()
-                });
+                parent.spawn(text_bundle);
             });
+        (orbitee_position, orbitee_mass, orbitee_velocity)
+    };
+
+    //spawn objects with random positions and velocities
+    for i in 0..10 {
+        let density: f32 = 1.;
+        let mass: f32 = random::<f32>() * 10000. + 1000.; //20000. + 1000000.;
+        let speed: f32 = random::<f32>() * 10000. + 1000.;
+
+        let (orbitee_position, orbitee_mass, orbitee_velocity) = yeet(
+            density,
+            mass,
+            speed,
+            "Object".to_string() + &i.to_string(),
+            &orbitee_mass,
+            &orbitee_position,
+            &orbitee_velocity,
+        );
+
+        yeet(
+            1.,
+            100.,
+            100.,
+            "Object baby ".to_string() + &i.to_string(),
+            &orbitee_mass,
+            &orbitee_position,
+            &orbitee_velocity,
+        );
     }
 }
 
-fn test(
-    mut query: Query<(&Transform, &mut Style, &FollowEntity), Without<FollowText>>,
-    obj_query: Query<&Transform, (With<FollowText>)>,
+fn update_camera_follow(
+    following_entity: Res<CameraFollowEntity>,
+    mut query: Query<&mut Transform, With<Camera2d>>,
+    obj_query: Query<&Transform, Without<Camera2d>>,
+) {
+    for mut camera_transform in &mut query {
+        let entity = obj_query.get(following_entity.0);
+        match entity {
+            Ok(entity_transform) => {
+                camera_transform.translation = entity_transform.translation;
+            }
+            _ => {
+                println!("No entity following!");
+            }
+        }
+    }
+}
+
+fn update_follow_text(
+    mut query: Query<(&mut Style, &FollowEntity), Without<FollowText>>,
+    obj_query: Query<(&Transform, &Radius, &Name), With<FollowText>>,
     camera_query: Query<(&Camera, &GlobalTransform)>,
 ) {
     for (camera, global_transform) in &camera_query {
-        println!("camera");
-        for (transform, mut style, follow_entity) in &mut query {
-            println!("query!");
+        //println!("camera");
+        for (mut style, follow_entity) in &mut query {
+            //println!("query!");
             let entity = obj_query.get(follow_entity.0);
 
             match entity {
-                Ok(entity_transform) => {
+                Ok((entity_transform, entity_radius, entity_name)) => {
                     if let Some(position) =
                         camera.world_to_viewport(global_transform, entity_transform.translation)
                     {
+                        println!("name: {:?}", entity_name);
                         //set style position centered on entity posititon
                         style.position_type = PositionType::Absolute;
-                        style.left = bevy::ui::Val::Px(position.x);
-                        style.top = bevy::ui::Val::Px(position.y);
-                        println!("width: {:?}, height: {:?}", style.width, style.height);
+                        let width = match style.width {
+                            Val::Px(w) => w,
+                            _ => 0.,
+                        };
+                        let height = match style.height {
+                            Val::Px(h) => h,
+                            _ => 0.,
+                        };
+                        style.left = bevy::ui::Val::Px(position.x - width / 2.);
+                        style.top = bevy::ui::Val::Px(position.y - height / 2. - entity_radius.0);
+                        //println!("width: {:?}, height: {:?}", style.width, style.height);
                     }
                 }
                 Err(_) => {
@@ -247,6 +322,9 @@ fn test(
         }
     }
 }
+
+#[derive(Resource)]
+struct CameraFollowEntity(Entity);
 
 #[derive(Component)]
 struct FollowEntity(Entity);
@@ -282,4 +360,20 @@ impl Default for FPS {
 
 fn print_frames(mut fps: ResMut<FPS>, time: Res<FrameCount>) {
     println!("FPS: {}", fps.get_fps(time));
+}
+
+//on pressing space, pick a random object to follow
+fn update_space(
+    mut camera_follow: ResMut<CameraFollowEntity>,
+    keyboard: Res<Input<KeyCode>>,
+    query: Query<Entity, With<FollowText>>,
+) {
+    if keyboard.just_pressed(KeyCode::Space) {
+        let mut query_iter = query.iter();
+        let len = query_iter.len();
+        let mut rng = rand::thread_rng();
+        let entity_index = rng.gen_range(0..len);
+        let entity = query_iter.nth(entity_index).unwrap();
+        camera_follow.0 = entity;
+    }
 }

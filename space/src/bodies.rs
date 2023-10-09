@@ -1,26 +1,27 @@
 use crate::config::*;
 
-use bevy::{
-    prelude::*,
-    sprite::{Material2d, MaterialMesh2dBundle},
-};
+use bevy::{prelude::*, sprite::MaterialMesh2dBundle};
 
-use rand::random;
+use rand::*;
 
 pub struct BodyPlugin;
 
 impl Plugin for BodyPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
-            FixedUpdate,
+            Update,
             (
                 update_transform.after(update_velocity),
                 update_acceleration,
                 update_velocity.after(update_acceleration),
             ),
-        );
+        )
+        .insert_resource(SimulationSpeed(1.));
     }
 }
+
+#[derive(Resource)]
+pub struct SimulationSpeed(pub f32);
 
 pub fn new_body(
     mass: f32,
@@ -54,44 +55,47 @@ fn calculate_radius(mass: f32, density: f32) -> f32 {
 }
 
 pub fn new_orbiting_body(
-    orbitee_radius: f32,
-    orbitee_mass: f32,
-    orbitee_position: Vec2,
-    orbitee_velocity: Vec2,
+    orbitee_mass: &f32,
+    orbitee_position: &Vec2,
+    orbitee_velocity: &Vec2,
     mass: f32,
     density: f32,
-    radius: f32,
+    speed: f32,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
 ) -> BodyBundle {
     //let radius = radius + orbitee_radius; // radius from outside of circle, for easier mental model
     //let speed = ((GRAVITY * orbitee_mass) / radius * TIME_STEP).powf(1. / 2.);
-    let speed = 100.;
-    let radius = calculate_radius_off_speed(orbitee_mass, speed) * TIME_STEP;
+
+    let radius = calculate_radius_off_speed(orbitee_mass, &speed) * SIMULATION_CONSTANT;
     let angle: f32 = random::<f32>() * 6.28319;
-    let angle_rotated: f32 = angle + 1.5715;
-    let position = Vec2::new(radius * angle.cos(), radius * angle.sin()) + orbitee_position;
-    let velocity = (Vec2::new(angle_rotated.cos(), angle_rotated.sin()) * speed)
-        + orbitee_velocity * TIME_STEP;
+    let angle_rotated: f32 = angle + 1.5715 + (random::<f32>() * 2.0).floor() * 3.14159;
+    let position = Vec2::new(radius * angle.cos(), radius * angle.sin()) + *orbitee_position;
+    let velocity =
+        (Vec2::new(angle_rotated.cos(), angle_rotated.sin()) * speed) + *orbitee_velocity;
 
     println!(
-        "Spawning object with radius: {}, mass: {}, speed: {}, position: {:?}, velocity: {:?}",
-        radius, mass, speed, position, velocity
+        "Spawning object with orbit radius: {}, mass: {}, speed: {}, position: {:?}, velocity: {:?}, orbitee_velocity: {:?}",
+        radius, mass, speed, position, velocity, orbitee_velocity
     );
 
     new_body(mass, density, position, velocity, meshes, materials)
 }
 
-fn calculate_radius_off_speed(mass_central: f32, speed: f32) -> f32 {
-    let radius = (GRAVITY * mass_central / (speed * speed));
+fn calculate_radius_off_speed(mass_central: &f32, speed: &f32) -> f32 {
+    let radius = GRAVITY * mass_central / (speed * speed);
     radius
 }
 
-fn update_transform(mut query: Query<(&mut Transform, &mut Velocity, &Mass, &mut Acceleration)>) {
-    let dt_sq = DELTA_TIME;
-    for (mut transform, mut velocity, mass, mut acceleration) in &mut query {
-        transform.translation.x += velocity.0.x * dt_sq;
-        transform.translation.y += velocity.0.y * dt_sq;
+pub fn update_transform(
+    time: Res<Time>,
+    sim_speed: Res<SimulationSpeed>,
+    mut query: Query<(&mut Transform, &Velocity)>,
+) {
+    let dt_sq = time.delta_seconds_f64() * sim_speed.0 as f64 / SIMULATION_CONSTANT as f64;
+    for (mut transform, velocity) in &mut query {
+        transform.translation.x += (velocity.0.x as f64 * dt_sq) as f32;
+        transform.translation.y += (velocity.0.y as f64 * dt_sq) as f32;
     }
 }
 
